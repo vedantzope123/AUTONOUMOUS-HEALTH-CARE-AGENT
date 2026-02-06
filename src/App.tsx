@@ -12,6 +12,8 @@ import { DietPlan } from './pages/DietPlan';
 import { HealthReports } from './pages/HealthReports';
 import { HospitalLocator } from './pages/HospitalLocator';
 import { ReceiptAnalyzer } from './pages/ReceiptAnalyzer';
+import { Settings } from './pages/Settings';
+import { About } from './pages/About';
 
 function AppContent() {
   const { isConfigured } = useAppContext();
@@ -58,6 +60,14 @@ function AppContent() {
           path="/receipt"
           element={isConfigured ? <ReceiptAnalyzer /> : <Navigate to="/" />}
         />
+        <Route
+          path="/settings"
+          element={isConfigured ? <Settings /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/about"
+          element={<About />}
+        />
       </Routes>
     </>
   );
@@ -74,3 +84,4 @@ function App() {
 }
 
 export default App;
+

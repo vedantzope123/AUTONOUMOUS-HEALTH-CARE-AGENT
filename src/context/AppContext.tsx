@@ -56,6 +56,10 @@ interface AppContextType {
   voiceSettings: VoiceSettings;
   setVoiceSettings: (settings: VoiceSettings) => void;
   updateVoiceSettings: (settings: Partial<VoiceSettings>) => void;
+
+  // Theme Management
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -70,6 +74,7 @@ const STORAGE_KEYS = {
   DIET_RECOMMENDATIONS: 'aura_health_diet_recommendations',
   HEALTH_REPORTS: 'aura_health_health_reports',
   VOICE_SETTINGS: 'aura_health_voice_settings',
+  THEME: 'aura_health_theme',
 };
 
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -92,6 +97,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voiceSettings, setVoiceSettingsState] = useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
+  const [theme, setThemeState] = useState<'dark' | 'light'>('dark');
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -123,6 +129,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const savedVoiceSettings = localStorage.getItem(STORAGE_KEYS.VOICE_SETTINGS);
         if (savedVoiceSettings) setVoiceSettingsState(JSON.parse(savedVoiceSettings));
+
+        const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+        if (savedTheme) {
+          setThemeState(savedTheme as 'dark' | 'light');
+          applyTheme(savedTheme as 'dark' | 'light');
+        }
       } catch (err) {
         console.error('Error loading from localStorage:', err);
       }
@@ -130,6 +142,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     loadFromStorage();
   }, []);
+
+  // Apply theme to DOM
+  const applyTheme = (selectedTheme: 'dark' | 'light') => {
+    const root = document.documentElement;
+    if (selectedTheme === 'dark') {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
+    }
+  };
+
+  const setTheme = (selectedTheme: 'dark' | 'light') => {
+    setThemeState(selectedTheme);
+    localStorage.setItem(STORAGE_KEYS.THEME, selectedTheme);
+    applyTheme(selectedTheme);
+  };
 
   // Save API key to localStorage
   const setApiKey = (key: string) => {
@@ -246,6 +276,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     voiceSettings,
     setVoiceSettings,
     updateVoiceSettings,
+    theme,
+    setTheme,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
