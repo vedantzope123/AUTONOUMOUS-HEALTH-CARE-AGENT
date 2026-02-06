@@ -1,0 +1,487 @@
+import React, { useState, useEffect } from 'react';
+import { useAppContext } from '../context/AppContext';
+import {
+  ReceiptAnalyzerService,
+  initializeReceiptAnalyzerService,
+} from '../services/ReceiptAnalyzerService';
+import type { ReceiptAnalysis } from '../services/ReceiptAnalyzerService';
+import {
+  FiUpload,
+  FiFileText,
+  FiAlertCircle,
+  FiCheckCircle,
+  FiX,
+  FiDownload,
+  FiImage,
+} from 'react-icons/fi';
+import { MdDescription, MdLocalPharmacy, MdWarning } from 'react-icons/md';
+import { SpeakButton } from '../components/VoiceControls';
+import { getVoiceAssistant } from '../services/VoiceAssistantService';
+
+export const ReceiptAnalyzer: React.FC = () => {
+  const { apiKey, voiceSettings } = useAppContext();
+  const [analyzerService, setAnalyzerService] = useState<ReceiptAnalyzerService | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<ReceiptAnalysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState('');
+  const [uploadMode, setUploadMode] = useState<'image' | 'text'>('image');
+  const [voiceAssistant] = useState(() => getVoiceAssistant(voiceSettings));
+
+  useEffect(() => {
+    if (apiKey) {
+      const lang = voiceSettings.voiceLanguage.split('-')[0] as 'en' | 'hi';
+      const service = initializeReceiptAnalyzerService(apiKey, lang);
+      setAnalyzerService(service);
+    }
+  }, [apiKey, voiceSettings.voiceLanguage]);
+
+  useEffect(() => {
+    voiceAssistant.updateSettings(voiceSettings);
+  }, [voiceSettings, voiceAssistant]);
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file (JPG, PNG, etc.)');
+        return;
+      }
+      setSelectedFile(file);
+      setError(null);
+      setAnalysis(null);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!analyzerService) {
+      setError('Service not initialized. Please check your API key.');
+      return;
+    }
+
+    if (uploadMode === 'image' && !selectedFile) {
+      setError('Please select a receipt image first.');
+      return;
+    }
+
+    if (uploadMode === 'text' && !textInput.trim()) {
+      setError('Please enter receipt text first.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setError(null);
+
+    try {
+      const lang = voiceSettings.voiceLanguage.split('-')[0] as 'en' | 'hi';
+      let result: ReceiptAnalysis;
+      if (uploadMode === 'image' && selectedFile) {
+        result = await analyzerService.analyzeReceiptImage(selectedFile, lang);
+      } else {
+        result = await analyzerService.analyzeReceiptText(textInput, lang);
+      }
+      setAnalysis(result);
+      
+      // Auto-speak the summary
+      if (voiceAssistant.isSupported() && result.summary) {
+        try {
+          await voiceAssistant.speak(result.summary);
+        } catch (err) {
+          console.error('Failed to speak analysis:', err);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze receipt');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleClearFile = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setAnalysis(null);
+    setError(null);
+  };
+
+  const handleClearText = () => {
+    setTextInput('');
+    setAnalysis(null);
+    setError(null);
+  };
+
+  const exportAnalysis = () => {
+    if (!analysis) return;
+
+    const text = `Medical Receipt Analysis
+========================
+
+${analysis.summary}
+
+${analysis.medications && analysis.medications.length > 0 ? `
+Medications:
+${analysis.medications.map(med => `
+- ${med.name}${med.simpleName && med.simpleName !== med.name ? ` (${med.simpleName})` : ''}
+  Purpose: ${med.purpose}
+  ${med.dosage ? `Dosage: ${med.dosage}` : ''}
+`).join('\n')}
+` : ''}
+
+${analysis.diagnoses && analysis.diagnoses.length > 0 ? `
+Diagnoses:
+${analysis.diagnoses.map(diag => `
+- ${diag.medicalTerm}
+  Explanation: ${diag.simpleExplanation}
+`).join('\n')}
+` : ''}
+
+${analysis.procedures && analysis.procedures.length > 0 ? `
+Procedures:
+${analysis.procedures.map(proc => `
+- ${proc.medicalName}
+  What it means: ${proc.whatItMeans}
+`).join('\n')}
+` : ''}
+
+${analysis.instructions && analysis.instructions.length > 0 ? `
+Instructions:
+${analysis.instructions.map((inst, i) => `${i + 1}. ${inst}`).join('\n')}
+` : ''}
+
+${analysis.warnings && analysis.warnings.length > 0 ? `
+⚠️ Important Warnings:
+${analysis.warnings.map((warn, i) => `${i + 1}. ${warn}`).join('\n')}
+` : ''}
+
+---
+Generated by AuraHealth AI
+Date: ${new Date().toLocaleString()}
+`;
+
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `receipt-analysis-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center mb-4">
+            <MdDescription className="text-5xl text-primary-600" />
+          </div>
+          <h1 className="text-4xl font-bold text-gray-800 mb-2">
+            Medical Receipt Analyzer
+          </h1>
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Upload your medical receipts or prescriptions and get easy-to-understand
+            explanations of medical terms, medications, and diagnoses.
+          </p>
+        </div>
+
+        {/* Mode Toggle */}
+        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={() => {
+                setUploadMode('image');
+                handleClearText();
+              }}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
+                uploadMode === 'image'
+                  ? 'bg-primary-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <FiImage /> Upload Image
+            </button>
+            <button
+              onClick={() => {
+                setUploadMode('text');
+                handleClearFile();
+              }}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
+                uploadMode === 'text'
+                  ? 'bg-primary-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <FiFileText /> Enter Text
+            </button>
+          </div>
+        </div>
+
+        {/* Upload Section */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          {uploadMode === 'image' ? (
+            <>
+              {!selectedFile ? (
+                <div className="border-3 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-primary-400 transition-colors">
+                  <label className="cursor-pointer">
+                    <FiUpload className="mx-auto text-5xl text-gray-400 mb-4" />
+                    <p className="text-lg text-gray-600 mb-2">
+                      Click to upload or drag and drop
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Supported formats: JPG, PNG, JPEG
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <FiFileText className="text-2xl text-primary-500" />
+                      <div>
+                        <p className="font-medium text-gray-800">{selectedFile.name}</p>
+                        <p className="text-sm text-gray-500">
+                          {(selectedFile.size / 1024).toFixed(2)} KB
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleClearFile}
+                      className="text-red-500 hover:text-red-700 transition-colors"
+                    >
+                      <FiX className="text-2xl" />
+                    </button>
+                  </div>
+
+                  {previewUrl && (
+                    <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
+                      <img
+                        src={previewUrl}
+                        alt="Receipt preview"
+                        className="w-full max-h-96 object-contain"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Enter Receipt Text
+              </label>
+              <textarea
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Paste the text from your medical receipt or prescription here..."
+                className="w-full h-64 p-4 border-2 border-gray-300 rounded-lg focus:border-primary-500 focus:outline-none resize-none"
+              />
+              {textInput && (
+                <button
+                  onClick={handleClearText}
+                  className="flex items-center gap-2 text-red-500 hover:text-red-700 transition-colors"
+                >
+                  <FiX /> Clear Text
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Analyze Button */}
+          <button
+            onClick={handleAnalyze}
+            disabled={
+              isAnalyzing ||
+              (uploadMode === 'image' && !selectedFile) ||
+              (uploadMode === 'text' && !textInput.trim())
+            }
+            className="w-full mt-6 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-4 rounded-lg font-semibold text-lg hover:from-primary-600 hover:to-primary-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+          >
+            {isAnalyzing ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                Analyzing Receipt...
+              </span>
+            ) : (
+              'Analyze Receipt'
+            )}
+          </button>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-lg">
+            <div className="flex items-center gap-2 text-red-700">
+              <FiAlertCircle className="text-xl" />
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Analysis Results */}
+        {analysis && (
+          <div className="bg-white rounded-xl shadow-lg p-6 space-y-6">
+            <div className="flex items-center justify-between border-b pb-4">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <FiCheckCircle className="text-green-500" /> Analysis Complete
+              </h2>
+              <button
+                onClick={exportAnalysis}
+                className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+              >
+                <FiDownload /> Export
+              </button>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-blue-900">Summary</h3>
+                <SpeakButton text={analysis.summary} />
+              </div>
+              <p className="text-gray-700">{analysis.summary}</p>
+            </div>
+
+            {/* Medications */}
+            {analysis.medications && analysis.medications.length > 0 && (
+              <div className="border-l-4 border-green-500 pl-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <MdLocalPharmacy className="text-green-600" /> Medications
+                </h3>
+                <div className="space-y-3">
+                  {analysis.medications.map((med, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-800">
+                            {med.name}
+                            {med.simpleName && med.simpleName !== med.name && (
+                              <span className="text-sm text-gray-600 ml-2">
+                                ({med.simpleName})
+                              </span>
+                            )}
+                          </h4>
+                          <p className="text-gray-700 mt-1">
+                            <span className="font-medium">Purpose:</span> {med.purpose}
+                          </p>
+                          {med.dosage && (
+                            <p className="text-gray-700 mt-1">
+                              <span className="font-medium">Dosage:</span> {med.dosage}
+                            </p>
+                          )}
+                        </div>
+                        <SpeakButton 
+                          text={`${med.name}. Purpose: ${med.purpose}${med.dosage ? `. Dosage: ${med.dosage}` : ''}`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Diagnoses */}
+            {analysis.diagnoses && analysis.diagnoses.length > 0 && (
+              <div className="border-l-4 border-purple-500 pl-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                  Diagnoses
+                </h3>
+                <div className="space-y-3">
+                  {analysis.diagnoses.map((diag, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-800">{diag.medicalTerm}</h4>
+                          <p className="text-gray-700 mt-1">{diag.simpleExplanation}</p>
+                        </div>
+                        <SpeakButton 
+                          text={`${diag.medicalTerm}. ${diag.simpleExplanation}`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Procedures */}
+            {analysis.procedures && analysis.procedures.length > 0 && (
+              <div className="border-l-4 border-blue-500 pl-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                  Procedures
+                </h3>
+                <div className="space-y-3">
+                  {analysis.procedures.map((proc, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-gray-800">{proc.medicalName}</h4>
+                      <p className="text-gray-700 mt-1">{proc.whatItMeans}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Instructions */}
+            {analysis.instructions && analysis.instructions.length > 0 && (
+              <div className="border-l-4 border-yellow-500 pl-4">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                  Instructions
+                </h3>
+                <ul className="space-y-2">
+                  {analysis.instructions.map((inst, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <span className="text-yellow-600 font-bold">{index + 1}.</span>
+                      <span className="text-gray-700">{inst}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Warnings */}
+            {analysis.warnings && analysis.warnings.length > 0 && (
+              <div className="bg-red-50 p-4 rounded-lg border-l-4 border-red-500">
+                <h3 className="text-lg font-semibold text-red-900 mb-3 flex items-center gap-2">
+                  <MdWarning className="text-red-600" /> Important Warnings
+                </h3>
+                <ul className="space-y-2">
+                  {analysis.warnings.map((warn, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <span className="text-red-600 font-bold">⚠️</span>
+                      <span className="text-gray-700">{warn}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+              <p className="text-sm text-gray-700">
+                <strong>Disclaimer:</strong> This is an AI-generated analysis for
+                informational purposes only. Always consult with your healthcare provider
+                for medical advice and follow their instructions exactly as prescribed.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
