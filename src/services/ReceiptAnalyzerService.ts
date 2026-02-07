@@ -47,7 +47,9 @@ RESPONSIBILITIES:
    - If something is unclear, mention it
    - Always include a disclaimer that this is an AI analysis
 
-FORMAT YOUR RESPONSE AS JSON with this structure:
+IMPORTANT: You MUST format your response as valid JSON only. No markdown, no extra text, just pure JSON.
+
+Return ONLY a valid JSON object with this exact structure:
 {
   "summary": "A brief overview of the receipt in simple language",
   "medications": [
@@ -74,7 +76,7 @@ FORMAT YOUR RESPONSE AS JSON with this structure:
   "warnings": ["Important warnings or precautions"]
 }
 
-If any section is not applicable or not found in the receipt, use an empty array or omit it.`;
+Use empty arrays [] for empty sections. Return ONLY valid JSON, nothing else.`;
 
 export class ReceiptAnalyzerService {
   private model: any;
@@ -91,6 +93,7 @@ export class ReceiptAnalyzerService {
     });
     this.visionModel = this.genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',
+      systemInstruction: RECEIPT_ANALYZER_INSTRUCTION,
     });
   }
 
@@ -115,24 +118,39 @@ export class ReceiptAnalyzerService {
       ];
 
       const languageInstruction = responseLanguage === 'hi'
-        ? ' Provide all explanations in Hindi (हिंदी में). All text in the JSON response should be in Hindi language.'
+        ? ' Respond in Hindi (हिंदी में) for all text values in the JSON.'
         : '';
 
       const prompt = `Analyze this medical receipt/prescription and extract all relevant medical information. 
-      Translate any medical jargon into simple, patient-friendly language.
-      Provide the response in the JSON format specified in the system instructions.${languageInstruction}`;
+Translate any medical jargon into simple, patient-friendly language.
+Return ONLY a valid JSON object - no markdown, no extra text.${languageInstruction}`;
 
       const result = await this.visionModel.generateContent([prompt, ...imageParts]);
       const responseText = result.response.text();
       
-      // Extract JSON from response (handle markdown code blocks)
-      const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) || 
-                       responseText.match(/\{[\s\S]*\}/);
+      // Extract JSON from response (handle markdown code blocks and plain JSON)
+      let jsonString = '';
       
-      if (jsonMatch) {
-        const jsonString = jsonMatch[1] || jsonMatch[0];
-        const analysis = JSON.parse(jsonString);
-        return analysis as ReceiptAnalysis;
+      // Try to find JSON in markdown code block first
+      const jsonBlockMatch = responseText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (jsonBlockMatch) {
+        jsonString = jsonBlockMatch[1].trim();
+      } else {
+        // Try to find plain JSON object
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      }
+      
+      if (jsonString) {
+        try {
+          const analysis = JSON.parse(jsonString);
+          return analysis as ReceiptAnalysis;
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+          throw new Error('Invalid response format from AI');
+        }
       }
 
       // Fallback if no structured JSON found
@@ -155,7 +173,7 @@ export class ReceiptAnalyzerService {
       const responseLanguage = language || this.preferredLanguage;
       
       const languageInstruction = responseLanguage === 'hi'
-        ? ' Provide all explanations in Hindi (हिंदी में). All text in the JSON response should be in Hindi language.'
+        ? ' Respond in Hindi (हिंदी में) for all text values in the JSON.'
         : '';
 
       const prompt = `Analyze this medical receipt/prescription text and extract all relevant medical information:
@@ -163,19 +181,34 @@ export class ReceiptAnalyzerService {
 ${text}
 
 Translate any medical jargon into simple, patient-friendly language.
-Provide the response in the JSON format specified in the system instructions.${languageInstruction}`;
+Return ONLY a valid JSON object - no markdown, no extra text.${languageInstruction}`;
 
       const result = await this.model.generateContent(prompt);
       const responseText = result.response.text();
       
       // Extract JSON from response
-      const jsonMatch = responseText.match(/```json\n?([\s\S]*?)\n?```/) || 
-                       responseText.match(/\{[\s\S]*\}/);
+      let jsonString = '';
       
-      if (jsonMatch) {
-        const jsonString = jsonMatch[1] || jsonMatch[0];
-        const analysis = JSON.parse(jsonString);
-        return analysis as ReceiptAnalysis;
+      // Try to find JSON in markdown code block first
+      const jsonBlockMatch = responseText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (jsonBlockMatch) {
+        jsonString = jsonBlockMatch[1].trim();
+      } else {
+        // Try to find plain JSON object
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      }
+      
+      if (jsonString) {
+        try {
+          const analysis = JSON.parse(jsonString);
+          return analysis as ReceiptAnalysis;
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+          throw new Error('Invalid response format from AI');
+        }
       }
 
       return {
