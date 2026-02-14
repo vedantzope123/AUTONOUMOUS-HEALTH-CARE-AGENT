@@ -12,6 +12,9 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { setApiKey: saveApiKey, isConfigured } = useAppContext();
 
+  // Check for environment variable API key
+  const envApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -36,6 +39,16 @@ export const LandingPage: React.FC = () => {
       setError('Failed to configure API key. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSkipWithEnvKey = () => {
+    if (envApiKey) {
+      setIsLoading(true);
+      saveApiKey(envApiKey);
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500);
     }
   };
 
@@ -79,10 +92,23 @@ export const LandingPage: React.FC = () => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Environment API Key Notice */}
+            {envApiKey && (
+              <div className="p-4 bg-green-500/20 border border-green-400/50 backdrop-blur-sm rounded-xl text-green-100 text-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <MdVerifiedUser className="text-green-300" size={20} />
+                  <span className="font-bold">API Key Configured</span>
+                </div>
+                <p className="text-xs text-green-200">
+                  An API key is already configured via environment variables (Vercel). You can use it directly or enter your own below.
+                </p>
+              </div>
+            )}
+
             {/* API Key Input */}
             <div>
               <label htmlFor="apiKey" className="block text-sm font-semibold text-white mb-2 flex items-center gap-2">
-                <MdVerifiedUser className="text-cyan-400" /> Gemini API Key
+                <MdVerifiedUser className="text-cyan-400" /> Gemini API Key {envApiKey && '(Optional)'}
               </label>
               <div className="relative group">
                 <input
@@ -134,6 +160,19 @@ export const LandingPage: React.FC = () => {
                 </>
               )}
             </button>
+
+            {/* Use Environment Key Button */}
+            {envApiKey && (
+              <button
+                type="button"
+                onClick={handleSkipWithEnvKey}
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-2xl hover:scale-105 transform"
+              >
+                Use Configured API Key
+                <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
           </form>
 
           {/* Help Section */}

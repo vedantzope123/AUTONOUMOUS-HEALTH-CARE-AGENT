@@ -1,46 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import type { Appointment, Hospital } from '../types';
 import { generateId } from '../utils/helpers';
 import { FiCalendar, FiMapPin, FiPhone, FiX } from 'react-icons/fi';
-
-// Mock hospitals data
-const MOCK_HOSPITALS: Hospital[] = [
-  {
-    id: '1',
-    name: 'City General Hospital',
-    lat: 40.7128,
-    lng: -74.006,
-    distance: 2.3,
-    phone: '(555) 234-5678',
-    address: '123 Main St, New York, NY',
-    rating: 4.8,
-  },
-  {
-    id: '2',
-    name: 'Medical Center Plus',
-    lat: 40.758,
-    lng: -73.9855,
-    distance: 3.1,
-    phone: '(555) 345-6789',
-    address: '456 Park Ave, New York, NY',
-    rating: 4.6,
-  },
-  {
-    id: '3',
-    name: 'Emergency Care Hospital',
-    lat: 40.7489,
-    lng: -73.968,
-    distance: 1.8,
-    phone: '(555) 456-7890',
-    address: '789 5th Ave, New York, NY',
-    rating: 4.9,
-  },
-];
+import { getHospitalLocator, type HospitalLocation } from '../services/HospitalLocatorService';
 
 export const AppointmentsHub: React.FC = () => {
   const { appointments, addAppointment, cancelAppointment } = useAppContext();
   const [showForm, setShowForm] = useState(false);
+  const [nearbyHospitals, setNearbyHospitals] = useState<HospitalLocation[]>([]);
+  const [loadingHospitals, setLoadingHospitals] = useState(true);
   const [formData, setFormData] = useState({
     date: '',
     time: '',
@@ -48,6 +17,25 @@ export const AppointmentsHub: React.FC = () => {
     doctorName: '',
     reason: '',
   });
+
+  useEffect(() => {
+    // Fetch nearby hospitals when component mounts
+    const fetchNearbyHospitals = async () => {
+      try {
+        setLoadingHospitals(true);
+        const locator = getHospitalLocator();
+        const hospitals = await locator.getNearbyHospitals(10); // 10 km radius
+        setNearbyHospitals(hospitals);
+      } catch (error) {
+        console.error('Error fetching hospitals:', error);
+        // Keep empty array to show no hospitals found
+      } finally {
+        setLoadingHospitals(false);
+      }
+    };
+
+    fetchNearbyHospitals();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -102,34 +90,56 @@ export const AppointmentsHub: React.FC = () => {
                 <FiMapPin className="text-red-500" /> Nearby Hospitals
               </h2>
 
-              <div className="space-y-4">
-                {MOCK_HOSPITALS.map((hospital) => (
-                  <div key={hospital.id} className="p-4 border-2 border-primary-200 rounded-lg hover:border-primary-500 transition-colors">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-bold text-primary-900 text-lg">{hospital.name}</h3>
-                        <p className="text-sm text-primary-600 mt-1">{hospital.address}</p>
+              {loadingHospitals ? (
+                <div className="text-center py-8 text-primary-600">Loading nearby hospitals...</div>
+              ) : nearbyHospitals.length > 0 ? (
+                <div className="space-y-4">
+                  {nearbyHospitals.slice(0, 10).map((hospital) => (
+                    <div key={hospital.id} className="p-4 border-2 border-primary-200 rounded-lg hover:border-primary-500 transition-colors">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="font-bold text-primary-900 text-lg">{hospital.name}</h3>
+                          <p className="text-sm text-primary-600 mt-1">{hospital.address}</p>
+                          {hospital.types && hospital.types.length > 0 && (
+                            <p className="text-xs text-blue-600 mt-1">
+                              {hospital.types.slice(0, 2).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {hospital.rating && (
+                            <div className="text-yellow-500 font-bold">⭐ {hospital.rating}</div>
+                          )}
+                          <p className="text-sm text-primary-600">{hospital.distance} km away</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-yellow-500 font-bold">⭐ {hospital.rating}</div>
-                        <p className="text-sm text-primary-600">{hospital.distance} km away</p>
-                      </div>
-                    </div>
 
-                    <div className="flex flex-col md:flex-row gap-4 mt-3 pt-3 border-t border-primary-100">
-                      <a
-                        href={`tel:${hospital.phone}`}
-                        className="flex items-center gap-2 text-primary-600 hover:text-primary-800 font-semibold flex-1"
-                      >
-                        <FiPhone size={18} /> {hospital.phone}
-                      </a>
-                      <button className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold">
-                        View on Map
-                      </button>
+                      <div className="flex flex-col md:flex-row gap-4 mt-3 pt-3 border-t border-primary-100">
+                        {hospital.phone && hospital.phone !== 'Not available' && (
+                          <a
+                            href={`tel:${hospital.phone}`}
+                            className="flex items-center gap-2 text-primary-600 hover:text-primary-800 font-semibold flex-1"
+                          >
+                            <FiPhone size={18} /> {hospital.phone}
+                          </a>
+                        )}
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${hospital.latitude},${hospital.longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-lg font-semibold text-center"
+                        >
+                          View on Map
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-primary-600">
+                  No hospitals found nearby. Please check your location permissions.
+                </div>
+              )}
             </div>
 
             {/* Scheduled Appointments */}
@@ -228,9 +238,9 @@ export const AppointmentsHub: React.FC = () => {
                       className="w-full px-3 py-2 border-2 border-primary-200 rounded-lg focus:outline-none focus:border-primary-500"
                     >
                       <option value="">Select Hospital</option>
-                      {MOCK_HOSPITALS.map((h) => (
+                      {nearbyHospitals.map((h) => (
                         <option key={h.id} value={h.name}>
-                          {h.name}
+                          {h.name} - {h.distance} km
                         </option>
                       ))}
                     </select>

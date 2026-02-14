@@ -103,8 +103,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const loadFromStorage = () => {
       try {
+        // Check for environment variable first (for Vercel deployment)
+        const envApiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const savedApiKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
-        if (savedApiKey) setApiKeyState(savedApiKey);
+        
+        // Priority: User-provided key in localStorage > Environment variable
+        if (savedApiKey) {
+          setApiKeyState(savedApiKey);
+        } else if (envApiKey) {
+          setApiKeyState(envApiKey);
+        }
 
         const savedUserProfile = localStorage.getItem(STORAGE_KEYS.USER_PROFILE);
         if (savedUserProfile) setUserProfileState(JSON.parse(savedUserProfile));
