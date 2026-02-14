@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import type { Appointment, Hospital } from '../types';
+import type { Appointment } from '../types';
 import { generateId } from '../utils/helpers';
 import { FiCalendar, FiMapPin, FiPhone, FiX } from 'react-icons/fi';
 import { getHospitalLocator, type HospitalLocation } from '../services/HospitalLocatorService';
